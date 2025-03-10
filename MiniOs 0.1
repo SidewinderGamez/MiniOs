@@ -1,0 +1,285 @@
+'''
+import os
+import subprocess
+import json
+import getpass
+import pygame
+import sys
+
+DATA_FOLDER = "mini_os_data"
+USER_FILE = os.path.join(DATA_FOLDER, "users.json")
+
+# Ensure the data folder exists
+os.makedirs(DATA_FOLDER, exist_ok=True)
+
+logged_in = False  # Track login status
+
+def clear_screen():
+    """Clears the console screen."""
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def save_user():
+    """Asks for a username and password, then saves them unless they already exist."""
+    if os.path.exists(USER_FILE):
+        print("User already exists. Use login instead.")
+        return
+
+    username = input("Enter your name: ")
+    password = getpass.getpass("Enter a password: ")
+
+    with open(USER_FILE, "w") as f:
+        json.dump({"username": username, "password": password}, f)
+    
+    print("User registered successfully!")
+
+def login():
+    """Asks for a username and password and verifies them."""
+    global logged_in
+    if not os.path.exists(USER_FILE):
+        print("No user registered. Please set up an account first.")
+        return False
+
+    with open(USER_FILE, "r") as f:
+        user_data = json.load(f)
+
+    username = input("Enter your name: ")
+    password = getpass.getpass("Enter your password: ")
+
+    if username == user_data["username"] and password == user_data["password"]:
+        print("Login successful!")
+        logged_in = True
+        return True
+    else:
+        print("Invalid credentials.")
+        return False
+
+def run_python_script():
+    """Asks for a Python script name and runs it if the user is logged in."""
+    if not logged_in:
+        print("You must be logged in to run scripts. Please log in first.")
+        return
+
+    script_name = input("Enter the Python script to run (with .py extension): ")
+    
+    if not script_name.endswith(".py"):
+        print("Invalid file. Please enter a Python script.")
+        return
+    
+    if os.path.exists(script_name):
+        python_executable = sys.executable  # Gets the correct Python interpreter
+        subprocess.run([python_executable, script_name])
+    else:
+        print("Script not found.")
+        
+def shell():
+    """Basic shell for the mini OS."""
+    while True:
+        command = input("miniOS> ").strip().lower()
+
+        if command == "exit":
+            print("Exiting miniOS.")
+            break
+        elif command == "run":
+            run_python_script()
+        elif command == "save user":
+            save_user()
+        elif command == "login":
+            login()
+        elif command == "clear":
+            clear_screen()
+        else:
+            print("Unknown command. Available commands: run, save user, login, clear, exit")
+
+if __name__ == "__main__":
+    print("Welcome to miniOS!")
+    shell()
+'''
+
+import os
+import subprocess
+import json
+import getpass
+import pygame
+import sys
+
+# Pygame setup
+pygame.init()
+
+# Screen settings
+WIDTH, HEIGHT = 800, 600
+FONT_SIZE = 24
+FONT = pygame.font.Font(None, FONT_SIZE)
+TEXT_COLOR = (0, 255, 0)  # Green text
+BG_COLOR = (0, 0, 0)  # Black background
+LINE_SPACING = FONT_SIZE + 5
+
+# Initialize Pygame window
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("miniOS Terminal")
+
+DATA_FOLDER = "mini_os_data"
+USER_FILE = os.path.join(DATA_FOLDER, "users.json")
+
+os.makedirs(DATA_FOLDER, exist_ok=True)
+
+logged_in = False  # Track login status
+input_text = ""  # User input buffer
+command_history = []  # Stores previous commands & outputs
+
+def clear_screen():
+    """Clears the screen by resetting the command history."""
+    global command_history
+    command_history = []
+
+def save_user():
+    """Asks for a username and password, then saves them unless they already exist."""
+    if os.path.exists(USER_FILE):
+        command_history.append("User already exists. Use login instead.")
+        return
+
+    command_history.append("Enter your name:")
+    username = input_from_user()
+    command_history.append(username)
+
+    command_history.append("Enter a password:")
+    password = input_from_user(hidden=True)
+
+    with open(USER_FILE, "w") as f:
+        json.dump({"username": username, "password": password}, f)
+    
+    command_history.append("User registered successfully!")
+
+def login():
+    """Asks for a username and password and verifies them."""
+    global logged_in
+    if not os.path.exists(USER_FILE):
+        command_history.append("No user registered. Please set up an account first.")
+        return False
+
+    with open(USER_FILE, "r") as f:
+        user_data = json.load(f)
+
+    command_history.append("Enter your name:")
+    username = input_from_user()
+    command_history.append(username)
+
+    command_history.append("Enter your password:")
+    password = input_from_user(hidden=True)
+
+    if username == user_data["username"] and password == user_data["password"]:
+        command_history.append("Login successful!")
+        logged_in = True
+        return True
+    else:
+        command_history.append("Invalid credentials.")
+        return False
+
+def run_python_script():
+    """Asks for a Python script name and runs it if the user is logged in."""
+    if not logged_in:
+        command_history.append("You must be logged in to run scripts. Please log in first.")
+        return
+
+    command_history.append("Enter the Python script to run:")
+    script_name = input_from_user()
+    command_history.append(script_name)
+
+    if not script_name.endswith(".py"):
+        command_history.append("Invalid file. Please enter a Python script.")
+        return
+    
+    if os.path.exists(script_name):
+        python_executable = sys.executable
+        subprocess.run([python_executable, script_name])
+        command_history.append(f"Executed {script_name}")
+    else:
+        command_history.append("Script not found.")
+
+def input_from_user(hidden=False):
+    """Captures text input from the user in the Pygame terminal."""
+    global input_text
+    input_text = ""
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    return input_text
+                elif event.key == pygame.K_BACKSPACE:
+                    input_text = input_text[:-1]
+                else:
+                    if not hidden:  # Show input normally
+                        input_text += event.unicode
+                    else:  # Hide input (for passwords)
+                        input_text += "*"
+        render_terminal()
+
+def render_terminal():
+    """Draws the terminal screen with command history and current input."""
+    screen.fill(BG_COLOR)
+
+    y = HEIGHT - LINE_SPACING
+    for text in reversed(command_history[-25:]):  # Show last 25 lines max
+        text_surface = FONT.render(text, True, TEXT_COLOR)
+        screen.blit(text_surface, (10, y))
+        y -= LINE_SPACING
+
+    # Show current input
+    input_surface = FONT.render("> " + input_text, True, TEXT_COLOR)
+    screen.blit(input_surface, (10, HEIGHT - LINE_SPACING))
+
+    pygame.display.flip()
+
+def shell():
+    """Basic shell for the mini OS inside the Pygame window."""
+    global input_text
+
+    while True:
+        render_terminal()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    command_history.append("> " + input_text)
+                    process_command(input_text)
+                    input_text = ""
+
+                elif event.key == pygame.K_BACKSPACE:
+                    input_text = input_text[:-1]
+
+                else:
+                    input_text += event.unicode
+
+def process_command(command):
+    """Processes user commands."""
+    command = command.strip().lower()
+
+    if command == "exit":
+        command_history.append("Exiting miniOS.")
+        pygame.quit()
+        sys.exit()
+
+    elif command == "run":
+        run_python_script()
+
+    elif command == "save user":
+        save_user()
+
+    elif command == "login":
+        login()
+
+    elif command == "clear":
+        clear_screen()
+
+    else:
+        command_history.append(f"Unknown command: {command}")
+
+if __name__ == "__main__":
+    command_history.append("Welcome to miniOS!")
+    shell()
