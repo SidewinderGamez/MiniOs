@@ -1,0 +1,287 @@
+import os
+import json
+import subprocess
+import pygame
+import sys
+
+# Initialize Pygame
+pygame.init()
+
+# Screen settings
+WIDTH, HEIGHT = pygame.display.Info().current_w, pygame.display.Info().current_h
+FONT_SIZE = 24
+FONT = pygame.font.Font(None, FONT_SIZE)
+TEXT_COLOR = (0, 255, 0)
+BG_COLOR = (0, 0, 0)
+SCROLL_SPEED = 10
+
+# Pygame window setup
+screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
+pygame.display.set_caption("miniOS Terminal")
+
+# User & file system setup
+DATA_FOLDER = "mini_os_data"
+USER_FILE = os.path.join(DATA_FOLDER, "users.json")
+os.makedirs(DATA_FOLDER, exist_ok=True)
+
+# Global state
+logged_in = False
+input_text = ""
+command_history = []
+scroll_offset = 0
+files = []  # Stores file icons for desktop mode
+background_color = (20, 20, 20)  # Default desktop background
+context_menu = None
+selected_file = None
+
+# File icon class
+class FileIcon:
+    def __init__(self, name, x, y):
+        self.name = name
+        self.rect = pygame.Rect(x, y, 100, 30)
+        self.dragging = False
+
+    def draw(self):
+        pygame.draw.rect(screen, (100, 100, 100), self.rect)
+        text_surf = FONT.render(self.name, True, (255, 255, 255))
+        screen.blit(text_surf, (self.rect.x + 5, self.rect.y + 5))
+
+    def update_position(self, new_x, new_y):
+        self.rect.x, self.rect.y = new_x, new_y
+
+# Context menu class
+class ContextMenu:
+    def __init__(self, x, y, file):
+        self.rect = pygame.Rect(x, y, 150, 100)
+        self.file = file
+        self.options = ["Open", "Delete", "View", "Rename"]
+
+    def draw(self):
+        pygame.draw.rect(screen, (50, 50, 50), self.rect)
+        for i, option in enumerate(self.options):
+            text_surf = FONT.render(option, True, (255, 255, 255))
+            screen.blit(text_surf, (self.rect.x + 10, self.rect.y + 10 + (i * 25)))
+
+# Terminal functions
+def clear_screen():
+    global command_history
+    command_history = []
+
+def save_user():
+    if os.path.exists(USER_FILE):
+        command_history.append("User already exists. Use login or edit user instead.")
+        return
+    command_history.append("Enter your name:")
+    username = input_from_user()
+    command_history.append(username)
+    command_history.append("Enter a password:")
+    password = input_from_user(hidden=True)
+    with open(USER_FILE, "w") as f:
+        json.dump({"username": username, "password": password}, f)
+    command_history.append("User registered successfully!")
+
+def login():
+    global logged_in
+    if not os.path.exists(USER_FILE):
+        command_history.append("No user registered. Please set up an account first.")
+        return False
+    with open(USER_FILE, "r") as f:
+        user_data = json.load(f)
+    command_history.append("Enter your name:")
+    username = input_from_user()
+    command_history.append("Enter your password:")
+    password = input_from_user(hidden=True)
+    if username == user_data["username"] and password == user_data["password"]:
+        command_history.append("Login successful!")
+        logged_in = True
+        return True
+    else:
+        command_history.append("Invalid credentials.")
+        return False
+
+def edit_user():
+    """Allows the user to change their username and password after authentication."""
+    if not os.path.exists(USER_FILE):
+        command_history.append("No user registered. Please set up an account first.")
+        return
+
+    with open(USER_FILE, "r") as f:
+        user_data = json.load(f)
+
+    command_history.append("Enter your current name:")
+    username = input_from_user()
+    command_history.append(username)
+
+    command_history.append("Enter your current password:")
+    password = input_from_user(hidden=True)
+
+    if username == user_data["username"] and password == user_data["password"]:
+        command_history.append("Authentication successful. Enter new username:")
+        new_username = input_from_user()
+        command_history.append(new_username)
+
+        command_history.append("Enter new password:")
+        new_password = input_from_user(hidden=True)
+
+        with open(USER_FILE, "w") as f:
+            json.dump({"username": new_username, "password": new_password}, f)
+
+        command_history.append("User credentials updated successfully!")
+    else:
+        command_history.append("Invalid credentials. Cannot update user.")
+
+
+def list_commands():
+    command_history.append("Available commands:")
+    command_history.append("- save user: Register a new user")
+    command_history.append("- login: Log in with credentials")
+    command_history.append("- clear: Clear terminal output")
+    command_history.append("- run: Run a Python script")
+    command_history.append("- desktop: Switch to desktop mode")
+
+def run_python_script():
+    if not logged_in:
+        command_history.append("You must be logged in to run scripts. Please log in first.")
+        return
+    command_history.append("Enter the Python script to run:")
+    script_name = input_from_user()
+    if os.path.exists(script_name):
+        subprocess.run([sys.executable, script_name])
+        command_history.append(f"Executed {script_name}")
+    else:
+        command_history.append("Script not found.")
+
+def evaluate_math(expression):
+    """Evaluates simple math expressions like '4 + 5'."""
+    try:
+        result = eval(expression, {"__builtins__": {}})
+        command_history.append(f"{expression} = {result}")
+    except Exception:
+        command_history.append("Invalid math expression.")
+
+def input_from_user(hidden=False):
+    """Captures text input from the user in the Pygame terminal."""
+    global input_text
+    input_text = ""
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    return input_text
+                elif event.key == pygame.K_BACKSPACE:
+                    input_text = input_text[:-1]
+                else:
+                    if not hidden:  # Show input normally
+                        input_text += event.unicode
+                    else:  # Hide input (for passwords)
+                        input_text += "*"
+        render_terminal()
+
+def switch_to_terminal():
+    global mode
+    mode = "terminal"
+    command_history.append("Switched to terminal mode.")
+
+def switch_to_desktop():
+    global mode
+    mode = "desktop"
+    command_history.append("Switched to desktop mode.")
+    refresh_file_icons()
+
+def refresh_file_icons():
+    global files
+    files = []
+    file_list = os.listdir(DATA_FOLDER)
+    x, y = 50, 50
+    for file in file_list:
+        files.append(FileIcon(file, x, y))
+        y += 40
+        if y > HEIGHT - 50:
+            x += 120
+            y = 50
+
+def render_terminal():
+    screen.fill(BG_COLOR)
+    y = 10 - scroll_offset
+    for text in command_history[-25:]:
+        text_surface = FONT.render(text, True, TEXT_COLOR)
+        screen.blit(text_surface, (10, y))
+        y += 30
+    input_surface = FONT.render("> " + input_text, True, TEXT_COLOR)
+    screen.blit(input_surface, (10, HEIGHT - 30))
+    pygame.display.flip()
+
+def render_desktop():
+    screen.fill(background_color)
+    for file in files:
+        file.draw()
+    pygame.draw.rect(screen, (50, 50, 50), (WIDTH - 150, HEIGHT - 50, 140, 40))
+    text_surf = FONT.render("Terminal", True, (255, 255, 255))
+    screen.blit(text_surf, (WIDTH - 135, HEIGHT - 40))
+    if context_menu:
+        context_menu.draw()
+    pygame.display.flip()
+
+def process_command(command):
+    command = command.strip().lower()
+    if command == "exit":
+        pygame.quit()
+        sys.exit()
+    elif command == "run":
+        run_python_script()
+    elif command == "save user":
+        save_user()
+    elif command == "login":
+        login()
+    elif command == "clear":
+        clear_screen()
+    elif command == "list" or command == "help":
+        list_commands()
+    elif command == "desktop":
+        switch_to_desktop()
+    else:
+        command_history.append(f"Unknown command: {command}")
+
+def shell():
+    global input_text, scroll_offset, mode
+    mode = "terminal"
+    while True:
+        if mode == "terminal":
+            render_terminal()
+        else:
+            render_desktop()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                if mode == "terminal":
+                    if event.key == pygame.K_RETURN:
+                        command_history.append("> " + input_text)
+                        process_command(input_text)
+                        input_text = ""
+                    elif event.key == pygame.K_BACKSPACE:
+                        input_text = input_text[:-1]
+                    else:
+                        input_text += event.unicode
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if mode == "desktop":
+                    for file in files:
+                        if file.rect.collidepoint(event.pos):
+                            file.dragging = True
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if mode == "desktop":
+                    for file in files:
+                        file.dragging = False
+            elif event.type == pygame.MOUSEMOTION:
+                if mode == "desktop":
+                    for file in files:
+                        if file.dragging:
+                            file.update_position(event.pos[0], event.pos[1])
+
+if __name__ == "__main__":
+    command_history.append("Welcome to miniOS!")
+    shell()
